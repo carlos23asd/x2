@@ -1,0 +1,24 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>IPTV Player con Proxy</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body style="margin:0;background:#000;">
+  <video id="video" controls autoplay style="width:100%;max-width:100%;height:auto;"></video>
+  <script>
+    const video = document.getElementById('video');
+    const source = "/proxy.php?url=http://dplatino.net:8080/Oenfnf72737/Enebf83847473/69291";
+
+    if (Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(source);
+      hls.attachMedia(video);
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = source;
+    }
+  </script>
+</body>
+</html>
