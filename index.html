@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -146,6 +147,19 @@
             display: none;
         }
         
+        .error-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0,0,0,0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            z-index: 4;
+        }
+        
         @media (max-width: 768px) {
             #playlist-container {
                 width: 250px;
@@ -169,6 +183,7 @@
             </div>
             
             <div class="swipe-indicator">Desliza hacia la derecha para ocultar</div>
+            <div id="error-message" class="error-message" style="display: none;"></div>
         </div>
     </div>
 
@@ -178,14 +193,31 @@
             const player = videojs('video-player', {
                 fluid: true,
                 autoplay: false,
-                controls: true
+                controls: true,
+                html5: {
+                    hls: {
+                        overrideNative: true
+                    }
+                }
             });
+            
+            // Elemento para mostrar mensajes de error
+            const errorMessage = document.getElementById('error-message');
+            
+            // Función para mostrar mensajes de error
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorMessage.style.display = 'block';
+                setTimeout(() => {
+                    errorMessage.style.display = 'none';
+                }, 5000);
+            }
             
             // Datos de la lista de reproducción con la URL proporcionada
             const playlist = [
                 {
                     title: 'Canal Principal',
-                    url: 'https://live2.saohgdasregions.fun:9091/121_/index.m3u8?token=1df398657ce6d63b0fed63dcac917dca48c4269f-11afcd51e4e09898d173bc1b61f5fa26-1756464032-1756442432&remote=200.41.113.20&__PROXY_IDENTIFIER__=true'
+                    url: 'https://live2.saohgdasregions.fun:9091/121_/index.m3u8?token=1df398657ce6d63b0fed63dcac917dca48c4269f-11afcd51e4e09898d173bc1b61f5fa26-1756464032-1756442432&remote=200.41.113.20&__PROXY_IDENTIFIER__=false'
                 },
                 {
                     title: 'Canal 1 - Fútbol',
@@ -213,6 +245,7 @@
             let startX = 0;
             let currentX = 0;
             let isDragging = false;
+            let hlsInstance = null;
             
             // Renderizar la lista de reproducción
             function renderPlaylist() {
@@ -239,6 +272,15 @@
             
             // Cargar video
             function loadVideo(item, index) {
+                // Limpiar mensaje de error
+                errorMessage.style.display = 'none';
+                
+                // Limpiar HLS existente si hay
+                if (hlsInstance) {
+                    hlsInstance.destroy();
+                    hlsInstance = null;
+                }
+                
                 // Actualizar la interfaz
                 const items = document.querySelectorAll('.playlist-item');
                 items.forEach((el, i) => {
@@ -249,20 +291,65 @@
                     }
                 });
                 
-                // Cargar el video
-                if (Hls.isSupported()) {
-                    const hls = new Hls();
-                    hls.loadSource(item.url);
-                    hls.attachMedia(player.el());
-                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                        player.play();
-                    });
-                } else if (player.el().canPlayType('application/vnd.apple.mpegurl')) {
-                    player.src({
-                        src: item.url,
-                        type: 'application/vnd.apple.mpegurl'
-                    });
-                    player.play();
+                try {
+                    // Verificar si HLS.js es compatible
+                    if (Hls.isSupported()) {
+                        hlsInstance = new Hls({
+                            debug: true,
+                            enableWorker: true,
+                            lowLatencyMode: true,
+                            backBufferLength: 90
+                        });
+                        
+                        hlsInstance.on(Hls.Events.ERROR, function(event, data) {
+                            if (data.fatal) {
+                                switch (data.type) {
+                                    case Hls.ErrorTypes.NETWORK_ERROR:
+                                        showError('Error de red: No se puede cargar el video. Verifica tu conexión.');
+                                        hlsInstance.startLoad();
+                                        break;
+                                    case Hls.ErrorTypes.MEDIA_ERROR:
+                                        showError('Error de reproducción: Problema con el archivo de video.');
+                                        hlsInstance.recoverMediaError();
+                                        break;
+                                    default:
+                                        showError('Error al cargar el video: ' + data.type);
+                                        hlsInstance.destroy();
+                                        break;
+                                }
+                            }
+                        });
+                        
+                        hlsInstance.on(Hls.Events.MANIFEST_PARSED, function(event, data) {
+                            console.log('Manifest parsed, found ' + data.levels.length + ' quality level');
+                            player.play().catch(error => {
+                                showError('Error al reproducir: ' + error.message);
+                            });
+                        });
+                        
+                        hlsInstance.on(Hls.Events.FRAG_PARSING_ERROR, function(event, data) {
+                            console.error('Fragment parsing error:', data);
+                        });
+                        
+                        hlsInstance.loadSource(item.url);
+                        hlsInstance.attachMedia(player.el());
+                        
+                    } else if (player.el().canPlayType('application/vnd.apple.mpegurl')) {
+                        // Para Safari
+                        player.src({
+                            src: item.url,
+                            type: 'application/vnd.apple.mpegurl'
+                        });
+                        
+                        player.play().catch(error => {
+                            showError('Error al reproducir en Safari: ' + error.message);
+                        });
+                    } else {
+                        showError('Tu navegador no soporta HLS. Por favor, usa Chrome, Firefox o Safari.');
+                    }
+                } catch (error) {
+                    showError('Error al cargar el video: ' + error.message);
+                    console.error('Error loading video:', error);
                 }
                 
                 // Ocultar la lista en móviles después de seleccionar
@@ -289,7 +376,9 @@
             
             playPauseBtn.addEventListener('click', () => {
                 if (player.paused()) {
-                    player.play();
+                    player.play().catch(error => {
+                        showError('Error al reproducir: ' + error.message);
+                    });
                     playPauseBtn.textContent = 'Pausa';
                 } else {
                     player.pause();
@@ -303,6 +392,13 @@
             
             player.on('pause', () => {
                 playPauseBtn.textContent = 'Reproducir';
+            });
+            
+            player.on('error', () => {
+                const error = player.error();
+                if (error) {
+                    showError('Error del reproductor: ' + error.message);
+                }
             });
             
             // Gestos de deslizamiento
@@ -379,6 +475,13 @@
                 }
             });
             
+            // Manejar descargas de página
+            window.addEventListener('beforeunload', () => {
+                if (hlsInstance) {
+                    hlsInstance.destroy();
+                }
+            });
+            
             // Inicializar estado según el tamaño de pantalla
             if (window.innerWidth > 768) {
                 showPlaylist();
@@ -387,3 +490,4 @@
     </script>
 </body>
 </html>
+```
