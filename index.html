@@ -1,24 +1,389 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <title>IPTV Player con Proxy</title>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reproductor de Video M3U8</title>
+    <link href="https://vjs.zencdn.net/8.6.1/video-js.css" rel="stylesheet">
+    <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+        }
+        
+        #app {
+            display: flex;
+            width: 100%;
+            height: 100vh;
+            position: relative;
+        }
+        
+        #video-container {
+            flex: 1;
+            background-color: #000;
+            position: relative;
+            transition: transform 0.3s ease;
+            z-index: 1;
+        }
+        
+        #playlist-container {
+            width: 300px;
+            background-color: #1a1a1a;
+            color: white;
+            overflow-y: auto;
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            z-index: 2;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.3);
+        }
+        
+        #playlist-container.visible {
+            transform: translateX(0);
+        }
+        
+        .playlist-header {
+            padding: 20px;
+            background-color: #2a2a2a;
+            text-align: center;
+            font-weight: bold;
+            border-bottom: 1px solid #333;
+        }
+        
+        .playlist-item {
+            padding: 15px 20px;
+            border-bottom: 1px solid #333;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .playlist-item:hover {
+            background-color: #333;
+        }
+        
+        .playlist-item.active {
+            background-color: #4a90e2;
+        }
+        
+        .playlist-item-title {
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+        
+        .playlist-item-url {
+            font-size: 0.8em;
+            color: #aaa;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        #video-player {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        
+        .video-js {
+            width: 100%;
+            height: 100%;
+        }
+        
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 3;
+        }
+        
+        #video-container:hover #controls {
+            opacity: 1;
+        }
+        
+        .control-button {
+            background-color: rgba(0,0,0,0.5);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .control-button:hover {
+            background-color: rgba(0,0,0,0.8);
+        }
+        
+        .swipe-indicator {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: white;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 3;
+            display: none;
+        }
+        
+        @media (max-width: 768px) {
+            #playlist-container {
+                width: 250px;
+            }
+        }
+    </style>
 </head>
-<body style="margin:0;background:#000;">
-  <video id="video" controls autoplay style="width:100%;max-width:100%;height:auto;"></video>
-  <script>
-    const video = document.getElementById('video');
-    const source = "/proxy.php?url=http://dplatino.net:8080/Oenfnf72737/Enebf83847473/69291";
+<body>
+    <div id="app">
+        <div id="playlist-container">
+            <div class="playlist-header">Lista de Reproducción</div>
+            <div id="playlist-items"></div>
+        </div>
+        
+        <div id="video-container">
+            <video id="video-player" class="video-js vjs-default-skin" controls></video>
+            
+            <div id="controls">
+                <button id="playlist-toggle" class="control-button">Lista</button>
+                <button id="play-pause" class="control-button">Pausa</button>
+            </div>
+            
+            <div class="swipe-indicator">Desliza hacia la derecha para ocultar</div>
+        </div>
+    </div>
 
-    if (Hls.isSupported()) {
-      const hls = new Hls();
-      hls.loadSource(source);
-      hls.attachMedia(video);
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = source;
-    }
-  </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Inicializar el reproductor de video
+            const player = videojs('video-player', {
+                fluid: true,
+                autoplay: false,
+                controls: true
+            });
+            
+            // Datos de la lista de reproducción con la URL proporcionada
+            const playlist = [
+                {
+                    title: 'Canal Principal',
+                    url: 'https://live2.saohgdasregions.fun:9091/121_/index.m3u8?token=1df398657ce6d63b0fed63dcac917dca48c4269f-11afcd51e4e09898d173bc1b61f5fa26-1756464032-1756442432&remote=200.41.113.20&__PROXY_IDENTIFIER__=true'
+                },
+                {
+                    title: 'Canal 1 - Fútbol',
+                    url: 'https://example.com/stream1.m3u8?token=abc123&expires=1756464032'
+                },
+                {
+                    title: 'Canal 2 - Noticias',
+                    url: 'https://example.com/stream2.m3u8?token=def456&expires=1756464032'
+                },
+                {
+                    title: 'Canal 3 - Música',
+                    url: 'https://example.com/stream3.m3u8?token=ghi789&expires=1756464032'
+                }
+            ];
+            
+            // Elementos del DOM
+            const playlistContainer = document.getElementById('playlist-container');
+            const playlistItems = document.getElementById('playlist-items');
+            const playlistToggle = document.getElementById('playlist-toggle');
+            const playPauseBtn = document.getElementById('play-pause');
+            const videoContainer = document.getElementById('video-container');
+            const swipeIndicator = document.querySelector('.swipe-indicator');
+            
+            // Variables de control de gestos
+            let startX = 0;
+            let currentX = 0;
+            let isDragging = false;
+            
+            // Renderizar la lista de reproducción
+            function renderPlaylist() {
+                playlistItems.innerHTML = '';
+                playlist.forEach((item, index) => {
+                    const playlistItem = document.createElement('div');
+                    playlistItem.className = 'playlist-item';
+                    if (index === 0) {
+                        playlistItem.classList.add('active');
+                    }
+                    
+                    playlistItem.innerHTML = `
+                        <div class="playlist-item-title">${item.title}</div>
+                        <div class="playlist-item-url">${item.url.length > 50 ? item.url.substring(0, 50) + '...' : item.url}</div>
+                    `;
+                    
+                    playlistItem.addEventListener('click', () => {
+                        loadVideo(item, index);
+                    });
+                    
+                    playlistItems.appendChild(playlistItem);
+                });
+            }
+            
+            // Cargar video
+            function loadVideo(item, index) {
+                // Actualizar la interfaz
+                const items = document.querySelectorAll('.playlist-item');
+                items.forEach((el, i) => {
+                    if (i === index) {
+                        el.classList.add('active');
+                    } else {
+                        el.classList.remove('active');
+                    }
+                });
+                
+                // Cargar el video
+                if (Hls.isSupported()) {
+                    const hls = new Hls();
+                    hls.loadSource(item.url);
+                    hls.attachMedia(player.el());
+                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                        player.play();
+                    });
+                } else if (player.el().canPlayType('application/vnd.apple.mpegurl')) {
+                    player.src({
+                        src: item.url,
+                        type: 'application/vnd.apple.mpegurl'
+                    });
+                    player.play();
+                }
+                
+                // Ocultar la lista en móviles después de seleccionar
+                if (window.innerWidth <= 768) {
+                    hidePlaylist();
+                }
+            }
+            
+            // Mostrar/Ocultar lista de reproducción
+            function togglePlaylist() {
+                playlistContainer.classList.toggle('visible');
+            }
+            
+            function showPlaylist() {
+                playlistContainer.classList.add('visible');
+            }
+            
+            function hidePlaylist() {
+                playlistContainer.classList.remove('visible');
+            }
+            
+            // Event Listeners
+            playlistToggle.addEventListener('click', togglePlaylist);
+            
+            playPauseBtn.addEventListener('click', () => {
+                if (player.paused()) {
+                    player.play();
+                    playPauseBtn.textContent = 'Pausa';
+                } else {
+                    player.pause();
+                    playPauseBtn.textContent = 'Reproducir';
+                }
+            });
+            
+            player.on('play', () => {
+                playPauseBtn.textContent = 'Pausa';
+            });
+            
+            player.on('pause', () => {
+                playPauseBtn.textContent = 'Reproducir';
+            });
+            
+            // Gestos de deslizamiento
+            videoContainer.addEventListener('touchstart', (e) => {
+                startX = e.touches[0].clientX;
+                isDragging = true;
+                swipeIndicator.style.display = 'block';
+            });
+            
+            videoContainer.addEventListener('touchmove', (e) => {
+                if (!isDragging) return;
+                
+                currentX = e.touches[0].clientX;
+                const diffX = currentX - startX;
+                
+                if (diffX > 0) {
+                    // Deslizando hacia la derecha
+                    if (playlistContainer.classList.contains('visible')) {
+                        const translateX = Math.min(diffX, 300);
+                        playlistContainer.style.transform = `translateX(${translateX - 300}px)`;
+                        swipeIndicator.style.opacity = diffX / 100;
+                    }
+                } else {
+                    // Deslizando hacia la izquierda
+                    if (!playlistContainer.classList.contains('visible')) {
+                        const translateX = Math.max(0, 300 + diffX);
+                        playlistContainer.style.transform = `translateX(-${translateX}px)`;
+                    }
+                }
+            });
+            
+            videoContainer.addEventListener('touchend', () => {
+                if (!isDragging) return;
+                
+                const diffX = currentX - startX;
+                const threshold = 100; // Umbral para determinar si se completa el gesto
+                
+                if (playlistContainer.classList.contains('visible')) {
+                    if (diffX > threshold) {
+                        hidePlaylist();
+                    } else {
+                        showPlaylist();
+                    }
+                } else {
+                    if (Math.abs(diffX) > threshold && diffX < 0) {
+                        showPlaylist();
+                    } else {
+                        hidePlaylist();
+                    }
+                }
+                
+                // Resetear estilos
+                playlistContainer.style.transform = '';
+                swipeIndicator.style.display = 'none';
+                swipeIndicator.style.opacity = '1';
+                isDragging = false;
+            });
+            
+            // Para dispositivos de escritorio (usar clic en el botón)
+            playlistToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+            
+            // Inicializar
+            renderPlaylist();
+            loadVideo(playlist[0], 0);
+            
+            // Ajustar para diferentes tamaños de pantalla
+            window.addEventListener('resize', () => {
+                if (window.innerWidth > 768) {
+                    showPlaylist();
+                } else {
+                    hidePlaylist();
+                }
+            });
+            
+            // Inicializar estado según el tamaño de pantalla
+            if (window.innerWidth > 768) {
+                showPlaylist();
+            }
+        });
+    </script>
 </body>
 </html>
